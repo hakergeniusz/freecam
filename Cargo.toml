@@ -1,0 +1,12 @@
+[package]
+name = "horizon-freecam"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Control your camera separately from your player. A Horizon native mod ported from the Freecam mod."
+publish = false
+
+# The runtime doubles as the mod's library (its tests) and the module the
+# bundle injects into the game; the helper files compile only inside it.
+[lib]
+path = "mixins/freecam/runtime.rs"

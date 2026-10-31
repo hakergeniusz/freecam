@@ -6,7 +6,7 @@ priority = 100
 # The commit it was tested on: it patches the client's perspective, input
 # and motion sources directly, so a Horizon change there needs a re-check.
 [compatibility]
-horizon_revision = "ba6344a59cb9e755b730dcf02285fc0d33b97d3c"
+horizon_revision = "af55a734865da4f1b11836164a979ff06a1f0449"
 
 # The mod's brain: pure standard library, no game types, tested on its own.
 [[module]]

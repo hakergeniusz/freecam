@@ -14,3 +14,11 @@ pub fn set_freeze(on: bool) {
 pub fn frozen() -> bool {
     FREEZE.load(core::sync::atomic::Ordering::Relaxed)
 }
+
+/// `frozen`, yielding to movement input: a tick whose keys say the player
+/// is being driven — a bot's held keys, a stick's push — runs anyway, so
+/// whoever drives the player drives it, and the freeze only holds an idle
+/// player still.
+pub fn skip(movement: bool) -> bool {
+    frozen() && !movement
+}

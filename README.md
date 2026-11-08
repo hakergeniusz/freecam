@@ -30,9 +30,13 @@ ignored while detached so it cannot disturb the view.
 - **Show player** — draw your own body while detached.
 - **Disable on damage** — return the camera when the player is hurt.
 - **Freeze player** — the player's whole simulation tick is skipped while
-  detached: no gravity, no momentum, no drift.
+  detached: no gravity, no momentum, no drift. A tick that drives the player
+  runs anyway, so a bot's held keys (Baritone) or a stick's push keep
+  working with the camera away.
 - **Interaction** — `Off` (the player neither digs nor places), `Camera`
-  (target and interact from the camera), or `Player` (the game's own ray).
+  (target and interact from the camera, while a click of your own is down),
+  or `Player` (the game's own ray). Bots always target from the player's
+  eyes, whatever the setting.
 - **Notify / Notify tripods** — the on-screen toasts, per camera kind.
 
 Settings are stored per install through Horizon's mod settings.

@@ -415,6 +415,11 @@ struct State {
     toast: Option<(String, Instant)>,
     /// The player's health last seen, for the damage exit.
     health: Option<f32>,
+    /// The user's mouse buttons down, counted from the presses and releases
+    /// the mouse helper sees. A bot's forced clicks never pass through
+    /// `play_mouse`, so a button down says the player's own hand is there:
+    /// the camera's aim follows only those, and bots keep their targeting.
+    clicks: u8,
 }
 impl Default for State {
     fn default() -> Self {
@@ -434,6 +439,7 @@ impl Default for State {
             camera_kind: 0,
             toast: None,
             health: None,
+            clicks: 0,
         }
     }
 }
@@ -661,13 +667,29 @@ pub fn view() -> Option<([f64; 3], f32, f32)> {
     STATE.with_borrow(|s| (s.active != Active::None).then_some((s.cam.pos, s.cam.yaw, s.cam.pitch)))
 }
 
-/// The ray interactions aim along when they come from the camera.
+/// The ray interactions aim along when they come from the camera: the
+/// camera's, but only while a click of the player's own is down — the rest
+/// of the time the game keeps its own targeting from the player's eyes,
+/// which is what a bot's clicks (that never pass through the mouse helper)
+/// must find there.
 pub fn aim() -> Option<([f64; 3], [f64; 3])> {
     STATE.with_borrow(|s| {
         let settings = s.settings?;
-        (settings.interaction == Interaction::Camera && s.active != Active::None)
+        (settings.interaction == Interaction::Camera && s.active != Active::None && s.clicks > 0)
             .then(|| (s.cam.pos, direction(s.cam.yaw, s.cam.pitch)))
     })
+}
+
+/// A mouse button went down or up (the mouse helper sees the user's clicks;
+/// a bot's forced ones never pass through `play_mouse`).
+pub fn mouse_click(pressed: bool) {
+    STATE.with_borrow_mut(|s| {
+        if pressed {
+            s.clicks = s.clicks.saturating_add(1);
+        } else {
+            s.clicks = s.clicks.saturating_sub(1);
+        }
+    });
 }
 
 /// The keys the mod takes from the player: the movement keys while the
@@ -947,6 +969,7 @@ fn number(value: f64) -> String {
 fn stop(s: &mut State) {
     s.held = Held::default();
     s.velocity = [0.0; 3];
+    s.clicks = 0;
 }
 
 #[cfg(test)]
@@ -1721,20 +1744,61 @@ mod tests {
         );
         // Off (the default): no aim of the mod's own.
         assert_eq!(aim(), None);
-        // From camera: the ray starts at the camera along its view.
+        // From camera: the ray starts at the camera along its view — but
+        // only while a click of the player's own is down; without one the
+        // game keeps its own targeting (a bot's clicks find it there).
         turn(600.0, 0.0);
         set_settings(Settings {
             interaction: Interaction::Camera,
             ..Settings::default()
         });
+        assert_eq!(aim(), None, "no button held: the game's own targeting");
+        mouse_click(true);
         let (from, along) = aim().unwrap();
         assert_eq!(from, view().unwrap().0);
         assert!((along[0] + 1.0).abs() < 1e-9, "yaw 90 looks along -X");
+        mouse_click(false);
+        assert_eq!(aim(), None, "the button went up again");
         // From player: the game's own.
         set_settings(Settings {
             interaction: Interaction::Player,
             ..Settings::default()
         });
+        assert_eq!(aim(), None);
+    }
+
+    #[test]
+    fn clicks_count_and_the_exit_lets_go() {
+        reset();
+        let get = stored(&[]);
+        let p = player(0.0, 0.0);
+        key(
+            true,
+            DEFAULT_TOGGLE_KEY,
+            true,
+            DEFAULT_TOGGLE_KEY,
+            DEFAULT_RESET_KEY,
+            Some(p),
+            get,
+        );
+        set_settings(Settings {
+            interaction: Interaction::Camera,
+            ..Settings::default()
+        });
+        // Two buttons down, one up: the aim still follows the camera.
+        mouse_click(true);
+        mouse_click(true);
+        mouse_click(false);
+        assert!(aim().is_some(), "one button still down");
+        // More releases than presses stay at none.
+        mouse_click(false);
+        assert_eq!(aim(), None);
+        // A press lost to a state reset (the mod went off mid-hold) can
+        // never leave a phantom button down.
+        mouse_click(true);
+        assert_eq!(disable(), Some(Command::Exit));
+        assert_eq!(aim(), None, "off: nothing held");
+        mouse_click(false);
         assert_eq!(aim(), None);
     }
 

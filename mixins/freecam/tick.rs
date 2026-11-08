@@ -25,6 +25,9 @@ fn freecam_tick(game: &mut crate::game::Game<'_>) {
             _ => crate::game::perspective::CameraType::FirstPerson,
         };
     }
-    // The player freezes inside the motion tick, which runs after this.
+    // The player freezes inside this thread's motion tick, which runs
+    // after this; the gate written here is this thread's, so the
+    // integrated server's own Game — whose freecam never flew — writes
+    // its own and cannot clear this one.
     horizon_client::motion::freecam_gate::set_freeze(freecam::freezes_player());
 }

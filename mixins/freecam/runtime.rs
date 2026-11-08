@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 /// The mod's id: its settings folder and its keys' lines.
 pub const ID: &str = "freecam";
-pub const VERSION: &str = "0.1.0";
+pub const VERSION: &str = "0.1.2";
 pub const DESCRIPTION: &str =
     "Control your camera separately from your player. Ported from the Freecam mod.";
 /// The mod's keys. The reset key is unbound by default, as the original's

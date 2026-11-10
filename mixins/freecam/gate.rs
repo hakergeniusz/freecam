@@ -135,6 +135,7 @@ mod tests {
                 assets,
                 collision_binding: binding,
                 resources,
+                health: &resources.health,
             }
             .controlled_simulation_tick(crate::sprint::Keys::default())
             .unwrap();

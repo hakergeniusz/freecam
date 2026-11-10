@@ -3,10 +3,11 @@ id = "freecam"
 version = "0.1.2"
 priority = 100
 
-# The commit it was tested on: it patches the client's perspective, input
-# and motion sources directly, so a Horizon change there needs a re-check.
+# The commit it was tested on: it patches the client's perspective, input,
+# motion and debug-overlay sources directly, so a Horizon change there needs
+# a re-check.
 [compatibility]
-horizon_revision = "af55a734865da4f1b11836164a979ff06a1f0449"
+horizon_revision = "2ebf00a0281c592f79191e76fce0e7d522c6f425"
 
 # The mod's brain: pure standard library, no game types, tested on its own.
 [[module]]
@@ -203,4 +204,20 @@ target = "horizon_client::motion::MotionWorld<'_,'_,'_>::controlled_simulation_t
 helper = "freeze.rs"
 bindings = [
   { name = "keys", ty = "crate::sprint::Keys", value = "keys" },
+]
+
+# The F3 overlay's position group follows the freecam while it flies: the
+# camera's place in the world and its view — XYZ, Block, Chunk, Section and
+# Facing — instead of the player's, who stands where the freeze holds them.
+[[injection]]
+id = "debug"
+kind = "MODIFY_VARIABLE"
+target = "horizon_client::game::debug_lines::Game<'_>::debug_entry_lines"
+helper = "debug.rs"
+variable = { name = "lines", ordinal = 4, at = "STORE" }
+require = 1
+ordinal = 0
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "lines", ty = "Vec<String>", value = "$value" },
 ]

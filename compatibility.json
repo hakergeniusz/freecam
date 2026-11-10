@@ -1,13 +1,14 @@
 {
-  "horizon_revision": "af55a734865da4f1b11836164a979ff06a1f0449",
+  "horizon_revision": "2ebf00a0281c592f79191e76fce0e7d522c6f425",
   "source_sha256": {
-    "crates/horizon-client/src/game.rs": "b99ccd23927aa4de5edf44322a0a4706b76d60fc109ace893899d9258cbf2c43",
-    "crates/horizon-client/src/game/native_hooks.rs": "1597f5f904d7c7fa807264faeecb5257642ba1720b153f0f1c35ef79c94a5ab9",
-    "crates/horizon-client/src/game/perspective.rs": "4910c20b90261802e0f870023ceb03daf6a2f7ba424a6a5ed40a0c88d67d38e8",
-    "crates/horizon-client/src/motion.rs": "3e54f5cd0a6c2fcf681cc11d46adf901101bc12c7976e56bd53b474827f6494b"
+    "crates/horizon-client/src/game.rs": "b12f409bf298f8d7f40f2e79e7e39d5fe7ebe464ecbbeac6914d7814d114de23",
+    "crates/horizon-client/src/game/debug_lines.rs": "91ac1d47a6b1e55bac52d0dbbc10ac33cae6448afd3c19cc2b82a0db11e4338c",
+    "crates/horizon-client/src/game/native_hooks.rs": "2cb9c8f04dd92484ae22788c61d658a76b34ab74bf9deab06b0e44958eecd5bd",
+    "crates/horizon-client/src/game/perspective.rs": "208b02524aa39033b7c97d6cfafcd63414dba99036e88dbf1ad11a779aa100c0",
+    "crates/horizon-client/src/motion.rs": "36ddf5e04828796ca7879114be61ae022ac1f31336320c72d38fb77e62a999b5"
   },
   "horizon_repository": "https://github.com/horizon-rust/horizon",
   "horizon_mixins_repository": "https://github.com/horizon-rust/horizon-mixins",
-  "horizon_mixins_revision": "4342a0bfbe71d4d14185528d64e496d6022f16a1",
+  "horizon_mixins_revision": "5a64af938ec86b00d53d16a408aabc0038fb3e57",
   "mixin_schema": 6
 }

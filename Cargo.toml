@@ -1,6 +1,6 @@
 [package]
 name = "horizon-freecam"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 description = "Control your camera separately from your player. A Horizon native mod ported from the Freecam mod."

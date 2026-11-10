@@ -32,11 +32,19 @@ ignored while detached so it cannot disturb the view.
 - **Freeze player** — the player's whole simulation tick is skipped while
   detached: no gravity, no momentum, no drift. A tick that drives the player
   runs anyway, so a bot's held keys (Baritone) or a stick's push keep
-  working with the camera away.
+  working with the camera away — and so does the bot's mining or building
+  in place, whose clicks and dig progress run on the game's tick, which no
+  freeze holds.
 - **Interaction** — `Off` (the player neither digs nor places), `Camera`
   (target and interact from the camera, while a click of your own is down),
-  or `Player` (the game's own ray). Bots always target from the player's
-  eyes, whatever the setting.
+  or `Player` (the game's own ray). With `Camera`, every interaction you
+  make — attack/break (mining progress included), use/place and pick — is
+  attempted at whatever the camera's ray hits, along its whole flight, even
+  far past the player's own reach; the integrated server may reject what is
+  too far from the player, in which case the block snaps back. Only the
+  keyboard, mouse and pad count as your hand: clicks from the agent source
+  (horizon-ctl, a script, a driving bot) keep the game's own targeting
+  whatever the setting, so bots dig and place where they look.
 - **Notify / Notify tripods** — the on-screen toasts, per camera kind.
 
 Settings are stored per install through Horizon's mod settings.
@@ -47,7 +55,7 @@ The `.hnmod` is source-only: Horizon's launcher compiles it against the
 pinned Horizon revision on install.
 
 ```sh
-python3 tools/package.py   # writes target/freecam-0.1.0.hnmod
+python3 tools/package.py   # writes target/freecam-0.2.0.hnmod
 ```
 
 ## Development
@@ -66,9 +74,10 @@ HORIZON_MIXINS=…/horizon-mixins python3 tools/horizon.py check --horizon …/h
 HORIZON_MIXINS=…/horizon-mixins python3 tools/horizon.py test  --horizon …/horizon
 ```
 
-`compatibility.json` pins the Horizon revision and the hashes of the four
-patched sources (`game.rs`, `game/native_hooks.rs`, `game/perspective.rs`,
-`motion.rs`); a Horizon change there needs the pins re-checked.
+`compatibility.json` pins the Horizon revision and the hashes of the five
+patched sources (`game.rs`, `game/debug_lines.rs`, `game/native_hooks.rs`,
+`game/perspective.rs`, `motion.rs`); a Horizon change there needs the pins
+re-checked.
 
 ## Ported from the original
 
@@ -81,6 +90,8 @@ patched sources (`game.rs`, `game/native_hooks.rs`, `game/perspective.rs`,
 - Damage and world-close exits; the close is silent, the tripods forget.
 - The dummy input on entry (the player's held fly keys are dropped so they
   do not walk on), and the view-kind remember/restore around the detach.
+- The camera-side interaction goes past the original's: the pick runs along
+  the camera's whole ray, so far edits are attempted and left to the server.
 
 ## Not ported (yet)
 

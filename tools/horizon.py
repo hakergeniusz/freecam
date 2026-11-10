@@ -118,24 +118,41 @@ def main():
         report = {"stage": str(output), "stage_changed": changed,
                   "horizon_revision": PIN, "staging_seconds": time.monotonic()-started}
         if args.action != "stage":
-            command = ["cargo", args.action, "--locked", "--offline", "-p", "horizon-client",
-                       "--bin", "horizon-client", "--no-default-features", "--target-dir", str(target)]
-            if args.action == "build":
-                command.extend(["--profile", "fast"])
+            # The mod's modules land in two crates: the runtime in the
+            # horizon-client lib (game.rs) and the freeze gate in the
+            # horizon-client-lib one (motion.rs). Check and build take the
+            # client bin (which links both); the tests run each lib's own
+            # harness — a bin harness holds neither crate's tests.
+            suites = [("-p", "horizon-client", "--bin", "horizon-client")]
             if args.action == "test":
-                command.extend(["game::freecam::tests", "--", "--nocapture"])
-            with lock(target.parent / (target.name + ".mod-template.lock")):
-                run_start = time.monotonic()
-                result = subprocess.run(command, cwd=output, capture_output=True, text=True)
-            report.update(cargo_seconds=time.monotonic()-run_start, cargo_command=command,
-                          cargo_exit=result.returncode)
-            log = ROOT / "target" / f"horizon-{args.action}.log"
-            log.write_text(result.stdout + result.stderr)
-            report["cargo_log"] = str(log)
-            if result.returncode:
-                print(result.stderr[-12000:], file=sys.stderr)
-                print(json.dumps(report), file=sys.stderr)
-                return result.returncode
+                suites = [("-p", "horizon-client", "--lib"),
+                          ("-p", "horizon-client-lib", "--lib")]
+            filters = []
+            if args.action == "test":
+                filters = [["game::freecam::tests"], ["motion::freecam_gate::tests"]]
+            report["suites"] = []
+            for index, suite in enumerate(suites):
+                command = ["cargo", args.action, "--locked", "--offline", *suite,
+                           "--no-default-features", "--target-dir", str(target)]
+                if args.action == "build":
+                    command.extend(["--profile", "fast"])
+                command.extend(filters[index] if filters else [])
+                if args.action == "test":
+                    command.extend(["--", "--nocapture"])
+                with lock(target.parent / (target.name + ".mod-template.lock")):
+                    run_start = time.monotonic()
+                    result = subprocess.run(command, cwd=output, capture_output=True, text=True)
+                log = ROOT / "target" / f"horizon-{args.action}-{index}.log"
+                log.write_text(result.stdout + result.stderr)
+                report["suites"].append({"cargo_command": command,
+                                         "cargo_seconds": time.monotonic()-run_start,
+                                         "cargo_exit": result.returncode,
+                                         "cargo_log": str(log)})
+                if result.returncode:
+                    report.update(cargo_exit=result.returncode, cargo_log=str(log))
+                    print(result.stderr[-12000:], file=sys.stderr)
+                    print(json.dumps(report), file=sys.stderr)
+                    return result.returncode
             if args.action == "build":
                 report["binary"] = str(target / "fast/horizon-client")
         print(json.dumps(report, indent=2))

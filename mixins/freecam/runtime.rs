@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 
 /// The mod's id: its settings folder and its keys' lines.
 pub const ID: &str = "freecam";
-pub const VERSION: &str = "0.1.2";
+pub const VERSION: &str = "0.2.0";
 pub const DESCRIPTION: &str =
     "Control your camera separately from your player. Ported from the Freecam mod.";
 /// The mod's keys. The reset key is unbound by default, as the original's
@@ -63,6 +63,12 @@ pub const MSG_ENABLED: &str = "Freecam has been enabled.";
 pub const MSG_DISABLED: &str = "Freecam has been disabled.";
 /// How long a toast stays on screen.
 pub const TOAST_TIME: Duration = Duration::from_secs(3);
+/// How far the camera's own hand reaches, in blocks, while its ray stands
+/// for the player's clicks: the game's pick runs along that ray to here
+/// instead of the player's reach, so a click attempts whatever the ray
+/// lands on, however far it flies. The integrated server may still reject
+/// what is past the player's own reach — the attempt is the point.
+pub const CAMERA_REACH: f64 = 64.0;
 
 /// The horizontal spread of a diagonal move, as the original's
 /// `Motion.DIAGONAL_MULTIPLIER` (`sin(45 degrees)`).
@@ -415,10 +421,12 @@ struct State {
     toast: Option<(String, Instant)>,
     /// The player's health last seen, for the damage exit.
     health: Option<f32>,
-    /// The user's mouse buttons down, counted from the presses and releases
-    /// the mouse helper sees. A bot's forced clicks never pass through
-    /// `play_mouse`, so a button down says the player's own hand is there:
-    /// the camera's aim follows only those, and bots keep their targeting.
+    /// The player's own mouse buttons down, counted from the presses and
+    /// releases the mouse helper sees. The helper says whose hand each
+    /// click is: the game marks its input source, and clicks from the
+    /// agent source (horizon-ctl, a script, a driving bot's) never count —
+    /// so a button down says the person at the machine is holding it, the
+    /// camera's aim follows only those, and bots keep their targeting.
     clicks: u8,
 }
 impl Default for State {
@@ -670,8 +678,9 @@ pub fn view() -> Option<([f64; 3], f32, f32)> {
 /// The ray interactions aim along when they come from the camera: the
 /// camera's, but only while a click of the player's own is down — the rest
 /// of the time the game keeps its own targeting from the player's eyes,
-/// which is what a bot's clicks (that never pass through the mouse helper)
-/// must find there.
+/// which is what a bot's clicks must find there. The pick helper extends
+/// this ray's reach to [`CAMERA_REACH`], so the whole interaction pipeline
+/// (mining, placing, picking) acts on whatever the camera's ray hits.
 pub fn aim() -> Option<([f64; 3], [f64; 3])> {
     STATE.with_borrow(|s| {
         let settings = s.settings?;
@@ -680,9 +689,14 @@ pub fn aim() -> Option<([f64; 3], [f64; 3])> {
     })
 }
 
-/// A mouse button went down or up (the mouse helper sees the user's clicks;
-/// a bot's forced ones never pass through `play_mouse`).
-pub fn mouse_click(pressed: bool) {
+/// A mouse button went down or up. `human` says whose hand it is (the
+/// helper reads the game's own input source): a person's click counts
+/// toward the camera's aim, a click from the agent source — a bot's or a
+/// script's — does not, and keeps the game's own targeting.
+pub fn mouse_click(pressed: bool, human: bool) {
+    if !human {
+        return;
+    }
     STATE.with_borrow_mut(|s| {
         if pressed {
             s.clicks = s.clicks.saturating_add(1);
@@ -1753,11 +1767,11 @@ mod tests {
             ..Settings::default()
         });
         assert_eq!(aim(), None, "no button held: the game's own targeting");
-        mouse_click(true);
+        mouse_click(true, true);
         let (from, along) = aim().unwrap();
         assert_eq!(from, view().unwrap().0);
         assert!((along[0] + 1.0).abs() < 1e-9, "yaw 90 looks along -X");
-        mouse_click(false);
+        mouse_click(false, true);
         assert_eq!(aim(), None, "the button went up again");
         // From player: the game's own.
         set_settings(Settings {
@@ -1786,19 +1800,54 @@ mod tests {
             ..Settings::default()
         });
         // Two buttons down, one up: the aim still follows the camera.
-        mouse_click(true);
-        mouse_click(true);
-        mouse_click(false);
+        mouse_click(true, true);
+        mouse_click(true, true);
+        mouse_click(false, true);
         assert!(aim().is_some(), "one button still down");
         // More releases than presses stay at none.
-        mouse_click(false);
+        mouse_click(false, true);
         assert_eq!(aim(), None);
         // A press lost to a state reset (the mod went off mid-hold) can
         // never leave a phantom button down.
-        mouse_click(true);
+        mouse_click(true, true);
         assert_eq!(disable(), Some(Command::Exit));
         assert_eq!(aim(), None, "off: nothing held");
-        mouse_click(false);
+        mouse_click(false, true);
+        assert_eq!(aim(), None);
+    }
+
+    #[test]
+    fn a_bots_clicks_leave_the_cameras_aim_alone() {
+        reset();
+        let get = stored(&[]);
+        let p = player(0.0, 0.0);
+        key(
+            true,
+            DEFAULT_TOGGLE_KEY,
+            true,
+            DEFAULT_TOGGLE_KEY,
+            DEFAULT_RESET_KEY,
+            Some(p),
+            get,
+        );
+        set_settings(Settings {
+            interaction: Interaction::Camera,
+            ..Settings::default()
+        });
+        // A driving bot's clicks come through the game's mouse mapping too,
+        // but marked as the agent's: they count for nothing, so the game
+        // keeps its own targeting from the player's eyes for them.
+        mouse_click(true, false);
+        assert_eq!(aim(), None, "a bot's press is not the player's hand");
+        mouse_click(false, false);
+        assert_eq!(aim(), None, "a bot's release does not unwind a person's");
+        // The same click from the person at the machine is counted.
+        mouse_click(true, true);
+        assert!(aim().is_some());
+        // An agent's release must not eat it.
+        mouse_click(false, false);
+        assert!(aim().is_some(), "whose hand it is decides, not the edge");
+        mouse_click(false, true);
         assert_eq!(aim(), None);
     }
 

@@ -29,6 +29,27 @@ pub fn skip(movement: bool) -> bool {
     frozen() && !movement
 }
 
+/// [`skip`] for the tick's own keys: the keys the sim was handed say
+/// whether it is being driven. Any movement key or jump drives; so does an
+/// analog stick's push past its dead zone, which moves the player even
+/// below the threshold where the direction flags set themselves. A player
+/// driven into a mining or a building job stands still (no keys held, the
+/// clicks live outside this tick) and stays frozen — the freeze holds a
+/// body, not a job.
+pub fn skip_keys(keys: crate::sprint::Keys) -> bool {
+    skip(driven(keys))
+}
+
+/// Whether the keys move the player this tick.
+fn driven(keys: crate::sprint::Keys) -> bool {
+    keys.forward
+        || keys.backward
+        || keys.left
+        || keys.right
+        || keys.jump
+        || keys.analog.is_some()
+}
+
 /// Whether the freecam asks this thread's sim to hold the player.
 pub fn frozen() -> bool {
     FREEZE.with(|freeze| freeze.get())
@@ -48,7 +69,47 @@ mod tests {
     // The staged crate's sim types: the injected module sees motion's own
     // items through its paths, not through the parent's imports.
     use crate::motion::{MotionResources, MotionWorld, PlayerMotion};
+    use crate::sprint::Keys;
     use crate::world::World;
+
+    /// The tick's keys decide whether the freeze holds: a key that moves
+    /// the player — or a stick's push, however gentle, past its dead zone —
+    /// runs the tick, and an idle player's keys freeze it.
+    #[test]
+    fn a_driven_players_keys_run_the_tick_and_an_idle_one_freezes() {
+        set_freeze(true);
+        let key = |flag: fn(&mut Keys), why: &str| {
+            let mut keys = Keys::default();
+            flag(&mut keys);
+            assert!(!skip_keys(keys), "{why}");
+        };
+        key(|k| k.forward = true, "a held forward key drives the player");
+        key(|k| k.backward = true, "a held back key drives the player");
+        key(|k| k.left = true, "a held left key drives the player");
+        key(|k| k.right = true, "a held right key drives the player");
+        key(|k| k.jump = true, "a held jump key drives the player");
+        // A gentle stick push moves the player through the analog vector
+        // even below the threshold where the direction flags set themselves,
+        // so the push alone is a driven tick.
+        key(
+            |k| k.analog = Some([0.2, 0.1]),
+            "a stick's push drives the player",
+        );
+        assert!(
+            skip_keys(Keys::default()),
+            "no keys and no stick: the freeze holds the idle player"
+        );
+        set_freeze(false);
+        assert!(
+            !skip_keys(Keys::default()),
+            "without the freeze nothing skips"
+        );
+        // A driven tick runs even without the freeze, as it always did.
+        let mut keys = Keys::default();
+        keys.forward = true;
+        assert!(!skip_keys(keys));
+    }
+
 
     /// A freeze set by the freecam's thread must survive the integrated
     /// server's thread: its Game's tick writes its own gate every tick

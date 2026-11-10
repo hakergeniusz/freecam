@@ -1,11 +1,11 @@
 [mod]
 id = "freecam"
-version = "0.1.2"
+version = "0.2.0"
 priority = 100
 
 # The commit it was tested on: it patches the client's perspective, input,
-# motion and debug-overlay sources directly, so a Horizon change there needs
-# a re-check.
+# targeting, motion and debug-overlay sources directly, so a Horizon change
+# there needs a re-check.
 [compatibility]
 horizon_revision = "2ebf00a0281c592f79191e76fce0e7d522c6f425"
 
@@ -110,19 +110,36 @@ bindings = [
   { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
 ]
 
+# The block a click targets: while the camera's ray stands for the player's
+# clicks, the pick runs along it out to the camera's own reach (the runtime
+# sets how far), so the attempt goes wherever the ray lands and the mining,
+# placing and picking pipeline follows the camera's target.
+[[injection]]
+id = "pick"
+kind = "HEAD"
+cancellable = true
+target = "horizon_client::game::Game<'_>::pick"
+helper = "pick.rs"
+bindings = [
+  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+]
+
 # Clicks do nothing while the camera is detached and the interaction is Off.
-# Either way the press says whose hand is on the mouse, so the camera's aim
-# (the interaction's From camera) follows only the player's own clicks.
+# The mapping's source says whose hand is on the button first: the person's
+# clicks count toward the camera's aim (the interaction's From camera), and
+# the agent source's — horizon-ctl, a script, a driving bot's — count for
+# nothing, are never eaten, and keep the game's own targeting.
 [[injection]]
 id = "mouse"
 kind = "HEAD"
 cancellable = true
-target = "horizon_client::game::Game<'_>::play_mouse"
+target = "horizon_client::game::Game<'_>::mouse_mapping"
 helper = "mouse.rs"
 bindings = [
-  { name = "game", ty = "&crate::game::Game<'_>", value = "&*self" },
+  { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
   { name = "button", ty = "winit::event::MouseButton", value = "button" },
   { name = "pressed", ty = "bool", value = "pressed" },
+  { name = "source", ty = "horizon_client::held::Source", value = "source" },
 ]
 
 # Once a tick: exits on damage or a closed world, restores the view kind,
@@ -195,7 +212,9 @@ bindings = [
 # The freeze: the player's whole simulation tick is skipped, so no gravity,
 # no momentum and no input drift move them while the camera flies. The tick's
 # own keys decide: a tick that drives the player (a bot's held keys, a
-# stick's push) runs anyway, so automation works with the camera away.
+# stick's push past its dead zone) runs anyway, so automation works with the
+# camera away, and a bot's mining or building in place goes on — its clicks
+# and dig state run on the game's tick, which no freeze holds.
 [[injection]]
 id = "freeze"
 kind = "HEAD"

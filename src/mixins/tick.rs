@@ -5,9 +5,13 @@
 // the combos with the digits open and reset tripods, the fly keys are
 // tracked while the camera flies). The stored settings refresh into the
 // brain every tick, so a change on the mod's page lands without a restart.
-// Then the tick's own work: exits on damage or a closed world (the
-// player's view kind comes back), turns off cleanly when the mod is
-// disabled, and drives the freeze gate the motion tick reads.
+// Then the tick's own work: the flight runs here too, one tick's worth —
+// the per-frame hook's dispatch never reached its helper on the staged
+// build (the toggle and the view's turn both worked on live seams while
+// the frame hook's movement moved no pixel), so the camera flies from the
+// tick, at the brain's per-tick speeds — and the exits on damage or a
+// closed world (the player's view kind comes back), the clean turn-off
+// when the mod is disabled, and the freeze gate the motion tick reads.
 //
 // The gate is this thread's, so the integrated server's own Game — whose
 // freecam never flew — writes its own and cannot clear this one.
@@ -79,7 +83,19 @@ fn freecam_tick(game: &mut crate::game::Game<'_>) {
             /// The keys' state as the last tick saw it.
             static PREV: core::cell::RefCell<std::collections::HashMap<&'static str, bool>> =
                 core::cell::RefCell::new(std::collections::HashMap::new());
+            /// Whether a world was open, as the last tick saw it: a close or
+            /// a fresh open resets the baseline below.
+            static WORLD: core::cell::Cell<Option<bool>> = const { core::cell::Cell::new(None) };
+            /// How long each key has stood down, in ticks.
+            static HOLD: core::cell::RefCell<std::collections::HashMap<&'static str, u32>> =
+                core::cell::RefCell::new(std::collections::HashMap::new());
+            /// The registered mappings a lost release left down, retired
+            /// until the mapping really lets go.
+            static RETIRED: core::cell::RefCell<std::collections::HashSet<&'static str>> =
+                core::cell::RefCell::new(std::collections::HashSet::new());
         }
+        let open = game.player.is_some();
+        let fresh = WORLD.with(|world| world.replace(Some(open)) != Some(open));
         let down = [
             (
                 freecam::DEFAULT_TOGGLE_KEY,
@@ -109,15 +125,52 @@ fn freecam_tick(game: &mut crate::game::Game<'_>) {
                 game.physical_keys.contains(&KeyCode::ControlLeft),
             ),
         ];
-        PREV.with(|prev| {
-            let mut prev = prev.borrow_mut();
+        PREV.with(|prev_cell| {
+            // A world's close or a fresh open resets the baseline: the game
+            // drops its key state along the way, and a release lost while
+            // the window was unfocused (one winit never sends) leaves what
+            // stood a lie. The first tick of a world starts from what is
+            // down now, not from what was.
+            let mut hold = HOLD.with(|hold| std::mem::take(&mut *hold.borrow_mut()));
+            let mut retired = RETIRED.with(|retired| std::mem::take(&mut *retired.borrow_mut()));
+            let mut prev = prev_cell.borrow_mut();
+            if fresh {
+                prev.clear();
+                hold.clear();
+                retired.clear();
+            }
             let mut out = Vec::new();
             for (name, now) in down {
+                let mapping =
+                    matches!(name, freecam::DEFAULT_TOGGLE_KEY | freecam::DEFAULT_RESET_KEY);
+                if now {
+                    *hold.entry(name).or_insert(0) += 1;
+                } else {
+                    hold.remove(name);
+                    retired.remove(name);
+                }
+                // The registered mappings' held state is bookkeeping a lost
+                // release can corrupt: the mapping then stands down for good,
+                // and every later press is no edge — the key stops working. A
+                // down that has outlasted any press is retired: one synthetic
+                // release, and presses count again from the next real one.
+                if mapping
+                    && now
+                    && hold.get(name).copied().unwrap_or(0) > freecam::STALE_TICKS
+                {
+                    if retired.insert(name) {
+                        prev.insert(name, false);
+                        out.push((name, false));
+                    }
+                    continue;
+                }
                 let was = prev.insert(name, now).unwrap_or(false);
                 if now != was {
                     out.push((name, now));
                 }
             }
+            HOLD.with(|cell| *cell.borrow_mut() = hold);
+            RETIRED.with(|cell| *cell.borrow_mut() = retired);
             out
         })
     }
@@ -181,6 +234,12 @@ fn freecam_tick(game: &mut crate::game::Game<'_>) {
     if let Some(freecam::Command::Exit) = freecam::tick(world_open, health) {
         restore_camera(game);
     }
+    // The flight itself: one tick's worth, here, where the key edges land —
+    // the per-frame hook's dispatch never reached its helper on the staged
+    // build, so the movement runs on the tick, at the brain's per-tick
+    // speeds. A closed world's tick exits first, and the brain moves
+    // nothing once the camera is back.
+    freecam::frame(freecam::TICK_DURATION, playing);
     // The player freezes inside this thread's motion tick, which runs
     // after this; the gate written here is this thread's.
     freecam::gate::set_freeze(freecam::freezes_player());

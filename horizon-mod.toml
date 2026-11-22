@@ -1,6 +1,6 @@
 id = "freecam"
 name = "Freecam"
-version = "0.3.0"
+version = "0.3.1"
 description = "Control your camera separately from your player: F4 detaches it, WASD and Space fly it through blocks, F4 plus a digit holds one of nine tripod spots."
 authors = ["hakergeniusz"]
 license = "MIT"
@@ -15,7 +15,9 @@ mixins = "e59da9094f0c2fdda6c627fe9eff22dec6a906f0"
 
 # Every tick, on every Game: the mod's two keys poll through their
 # registered mappings' held state (the window's physical keys stand where
-# the old native_key events stood), the stored settings refresh, exits on
+# the old native_key events stood; a world's close or a fresh open resets
+# the baseline, and a mapping a lost release left down is retired), the
+# stored settings refresh, the camera flies one tick's worth, exits on
 # damage or a closed world run, and the freeze gate is written.
 [[native.mixin]]
 id = "tick"
@@ -24,17 +26,6 @@ kind = "HEAD"
 helper = "src/mixins/tick.rs"
 bindings = [
   { name = "game", ty = "&mut crate::game::Game<'_>", value = "&mut *self" },
-]
-
-# Once a frame, while a world renders: the camera flies while the world is
-# played (the elapsed time is the helper's own, from frame to frame).
-[[native.mixin]]
-id = "frame"
-target = "horizon_client::game::native_visuals::Game<'_>::native_frame_visuals"
-kind = "HEAD"
-helper = "src/mixins/frame.rs"
-bindings = [
-  { name = "game", ty = "&crate::game::Game<'_>", value = "self" },
 ]
 
 # The toast, centered above the hotbar (the crosshair layer's post-draw).

@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 /// The mod's id: its settings folder and its keys' lines.
 pub const ID: &str = "freecam";
-pub const VERSION: &str = "0.3.0";
+pub const VERSION: &str = "0.3.1";
 pub const DESCRIPTION: &str =
     "Control your camera separately from your player. Ported from the Freecam mod.";
 /// The mod's keys. The reset key is unbound by default, as the original's
@@ -78,6 +78,15 @@ pub const DIAGONAL_MULTIPLIER: f64 = std::f64::consts::FRAC_1_SQRT_2;
 pub const SPRINT_MULTIPLIER: f64 = 1.5;
 /// Ticks per second: speeds are blocks per tick, frames are seconds.
 pub const TICKS_PER_SECOND: f64 = 20.0;
+/// One tick's worth of flight, the step the tick helper integrates: the
+/// per-frame hook's dispatch never reached its helper on the staged build,
+/// so the movement runs once a game tick at exactly one tick's length.
+pub const TICK_DURATION: Duration = Duration::from_millis(50);
+/// Ticks a registered mapping may stand down before its down is taken for a
+/// lost release (one that fell while the window was unfocused never
+/// arrives): past this, the tick helper retires it so a later press is an
+/// edge again. Longer than any press of a toggle key holds.
+pub const STALE_TICKS: u32 = 60;
 /// The creative flight's ease, per tick, toward its target velocity; and how
 /// far it targets past the set speeds. This port's approximation of vanilla's
 /// creative flight, which the original reuses for its Creative mode.
@@ -737,7 +746,8 @@ pub fn turn(xo: f64, yo: f64) -> bool {
     true
 }
 
-/// Once a frame: the camera flies while playing, and stops when it does not.
+/// Once a tick (the tick helper's call, one [`TICK_DURATION`] at a time): the
+/// camera flies while playing, and stops when it does not.
 pub fn frame(elapsed: Duration, playing: bool) {
     STATE.with_borrow_mut(|s| {
         if s.active == Active::None {
@@ -1932,6 +1942,16 @@ mod tests {
             Some(Command::Exit)
         );
         assert_eq!(toast(), None);
+    }
+
+    #[test]
+    fn the_tick_flight_step_and_the_retirement_bound_hold_their_story() {
+        // The tick helper integrates one tick per call: the step times the
+        // speeds (blocks per tick) exactly.
+        assert!((TICK_DURATION.as_secs_f64() * TICKS_PER_SECOND - 1.0).abs() < 1e-9);
+        // The retirement waits out at least a second of continuous down
+        // before taking the state for a lost release.
+        assert!(STALE_TICKS >= 20);
     }
 }
 

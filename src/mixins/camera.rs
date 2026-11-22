@@ -1,10 +1,14 @@
 // The view the frame renders from: the freecam's while it holds the camera,
 // the game's own otherwise.
+// Copyright (c) 2026 hakergeniusz. MIT.
 fn freecam_camera(
     game: &crate::game::Game<'_>,
 ) -> core::ops::ControlFlow<Option<(glam::DVec3, f32, f32)>> {
-    use crate::game::freecam as freecam;
-    if !game.native_on(freecam::ID) {
+    fn on(game: &crate::game::Game<'_>) -> bool {
+        game.stored_setting(freecam::ID, "enabled")
+            .is_none_or(|value| value.trim() != "false")
+    }
+    if !on(game) {
         return core::ops::ControlFlow::Continue(());
     }
     match freecam::view() {

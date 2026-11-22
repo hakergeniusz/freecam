@@ -6,21 +6,21 @@
 // nor places from a distance). The agent source's clicks — horizon-ctl, a
 // script, a driving bot's — count for nothing and are never eaten, so
 // whoever drives the player clicks with the player's own targeting.
+// Copyright (c) 2026 hakergeniusz. MIT.
 fn freecam_mouse(
     game: &mut crate::game::Game<'_>,
     button: winit::event::MouseButton,
     pressed: bool,
     source: horizon_client::held::Source,
 ) -> core::ops::ControlFlow<Result<()>> {
-    use crate::game::freecam as freecam;
+    fn on(game: &crate::game::Game<'_>) -> bool {
+        game.stored_setting(freecam::ID, "enabled")
+            .is_none_or(|value| value.trim() != "false")
+    }
     let _ = button;
     let human = !matches!(source, horizon_client::held::Source::Agent);
     freecam::mouse_click(pressed, human);
-    if human
-        && game.native_on(freecam::ID)
-        && game.native_playing()
-        && freecam::blocks_interaction()
-    {
+    if human && on(game) && game.playing() && freecam::blocks_interaction() {
         core::ops::ControlFlow::Break(Ok(()))
     } else {
         core::ops::ControlFlow::Continue(())

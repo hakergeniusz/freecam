@@ -1,6 +1,7 @@
 /target/
 /dist/
 /build/
+/.horizon/
 *.log
 *.tmp
 *.cache

@@ -6,8 +6,9 @@
 // returns the view to the player. F4 plus a hotbar digit opens one of nine
 // tripod cameras whose positions are kept until reset. The state machine,
 // movement, settings and messages live here; the helper files bridge this
-// module to the game (keys, the camera view, the HUD). This file is both the
-// mod's Cargo library (its tests) and the module the bundle adds to the game.
+// crate to the game (keys, the camera view, the HUD). This file is the
+// mod's Cargo library (its tests) and the crate every helper reaches as
+// `freecam::`.
 //
 // Settings are kept as the original's config was (`horizon-mods/
 // .horizon-mod-data/freecam/<key>`), with the original's defaults:
@@ -23,7 +24,7 @@ use std::time::{Duration, Instant};
 
 /// The mod's id: its settings folder and its keys' lines.
 pub const ID: &str = "freecam";
-pub const VERSION: &str = "0.2.0";
+pub const VERSION: &str = "0.3.0";
 pub const DESCRIPTION: &str =
     "Control your camera separately from your player. Ported from the Freecam mod.";
 /// The mod's keys. The reset key is unbound by default, as the original's
@@ -1931,5 +1932,211 @@ mod tests {
             Some(Command::Exit)
         );
         assert_eq!(toast(), None);
+    }
+}
+
+/// The freecam's freeze gate: the freecam's own thread asks, and every
+/// thread answers only for its own sims. It used to be a module staged into
+/// motion.rs; on the native route it lives in the brain, which both the
+/// game's and the motion scopes' helpers reach as `freecam::gate`.
+///
+/// The flag lives per thread, and that is the whole point. A single-player
+/// world runs two Games in one process: the window's on its thread, and the
+/// integrated server's own Game on the "Server thread", whose tick drives
+/// this same motion method for the same player and whose freecam never
+/// flew. A process-wide flag would make the freeze a coin flip on thread
+/// scheduling — the server's tick clearing what the camera's thread set,
+/// and any other simulation that ever runs through the method freezing
+/// with it. Per thread, the freeze holds exactly the freecam's own
+/// thread's sim — the client's — and no other player's or thread's motion
+/// ever reads it.
+pub mod gate {
+    thread_local! {
+        /// The player stands still while the freecam asks (the game's tick
+        /// on this thread writes this every tick, so a lost exit clears
+        /// itself within a tick).
+        static FREEZE: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+    }
+
+    /// Whether this thread's motion tick should skip the player's simulation
+    /// entirely: no gravity, no momentum, no input drift. `movement` is
+    /// whether the tick is being driven — a bot's held keys, a stick's push
+    /// past its dead zone — so whoever drives the player drives it, and the
+    /// freeze only holds an idle player still. The keys' own driven logic
+    /// lives in the freeze helper, next to the game's `Keys`.
+    pub fn skip(movement: bool) -> bool {
+        frozen() && !movement
+    }
+
+    /// Whether the freecam asks this thread's sim to hold the player.
+    pub fn frozen() -> bool {
+        FREEZE.with(|freeze| freeze.get())
+    }
+
+    /// The freecam's tick says whether this thread's sim should hold the
+    /// player. Another thread's Game — the integrated server's own, whose
+    /// freecam never flew — writes its own gate and can neither raise nor
+    /// clear this one.
+    pub fn set_freeze(on: bool) {
+        FREEZE.with(|freeze| freeze.set(on));
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// The freeze holds an idle sim and a driven one runs; without the
+        /// freeze nothing skips.
+        #[test]
+        fn the_gate_skips_an_idle_tick_and_runs_a_driven_one() {
+            set_freeze(true);
+            assert!(skip(false), "the freecam's thread holds an idle sim");
+            assert!(!skip(true), "a driven sim runs");
+            set_freeze(false);
+            assert!(!skip(false), "without the freeze nothing skips");
+            assert!(!skip(true), "a driven tick runs even without the freeze");
+        }
+
+        /// A freeze set by the freecam's thread must survive the integrated
+        /// server's thread: its Game's tick writes its own gate every tick
+        /// (its freecam never flew, so it writes false), and that write is
+        /// its own — the camera's thread stays frozen, and nothing on the
+        /// server's thread freezes with it.
+        #[test]
+        fn the_server_threads_tick_leaves_the_cameras_freeze_alone() {
+            set_freeze(true);
+            std::thread::scope(|s| {
+                s.spawn(|| {
+                    assert!(!skip(false), "no other thread's sim freezes");
+                    set_freeze(false);
+                    assert!(!skip(false));
+                })
+                .join()
+                .unwrap();
+            });
+            assert!(
+                skip(false),
+                "the server thread's write must not clobber the camera's freeze"
+            );
+            assert!(!skip(true));
+            set_freeze(false);
+            assert!(!skip(false));
+        }
+    }
+}
+
+/// The mod's registration handle: the game instantiates it for the settings
+/// page, the Controls entries and the dispatch registration.
+#[derive(Default)]
+pub struct Mod;
+
+/// The page's eleven settings and the two keys the tick helper polls (the
+/// toggle and the tripod reset; the digits and the fly keys stay the
+/// window's physical keys, as the original's fixed input kept them). The
+/// `client_tick_pre` impl is a no-op so the game always calls the
+/// `native_client_tick_pre` dispatch the tick mixin lives in: the game
+/// skips dispatches no mod listens to, and the mixin must run.
+#[mod_api::horizon_mod]
+impl mod_api::Hooks for Mod {
+    fn register(&self, registrar: &mut dyn mod_api::Registrar, _: &mod_api::RegistrationContext) {
+        use mod_api::{KeyConflictContext, KeyRegistration, SettingSpec};
+        let _ = registrar.register_setting(SettingSpec::toggle(
+            "enabled",
+            "freecam.setting.enabled",
+            true,
+        ));
+        let _ = registrar.register_setting(SettingSpec::choice(
+            "flight_mode",
+            "freecam.setting.flight_mode",
+            ["freecam.flight.default", "freecam.flight.creative"],
+            0,
+        ));
+        let _ = registrar.register_setting(SettingSpec::choice(
+            "horizontal_speed",
+            "freecam.setting.horizontal_speed",
+            [
+                "freecam.speed.0_25",
+                "freecam.speed.0_5",
+                "freecam.speed.1",
+                "freecam.speed.2",
+                "freecam.speed.4",
+                "freecam.speed.8",
+            ],
+            2,
+        ));
+        let _ = registrar.register_setting(SettingSpec::choice(
+            "vertical_speed",
+            "freecam.setting.vertical_speed",
+            [
+                "freecam.speed.0_25",
+                "freecam.speed.0_5",
+                "freecam.speed.1",
+                "freecam.speed.2",
+                "freecam.speed.4",
+                "freecam.speed.8",
+            ],
+            2,
+        ));
+        let _ = registrar.register_setting(SettingSpec::choice(
+            "perspective",
+            "freecam.setting.perspective",
+            [
+                "freecam.perspective.inside",
+                "freecam.perspective.first_person",
+                "freecam.perspective.third_person",
+                "freecam.perspective.mirror",
+            ],
+            0,
+        ));
+        let _ = registrar.register_setting(SettingSpec::toggle(
+            "show_player",
+            "freecam.setting.show_player",
+            true,
+        ));
+        let _ = registrar.register_setting(SettingSpec::toggle(
+            "disable_on_damage",
+            "freecam.setting.disable_on_damage",
+            true,
+        ));
+        let _ = registrar.register_setting(SettingSpec::toggle(
+            "freeze_player",
+            "freecam.setting.freeze_player",
+            false,
+        ));
+        let _ = registrar.register_setting(SettingSpec::choice(
+            "interaction",
+            "freecam.setting.interaction",
+            [
+                "freecam.interaction.off",
+                "freecam.interaction.camera",
+                "freecam.interaction.player",
+            ],
+            0,
+        ));
+        let _ = registrar.register_setting(SettingSpec::toggle(
+            "notify",
+            "freecam.setting.notify",
+            true,
+        ));
+        let _ = registrar.register_setting(SettingSpec::toggle(
+            "notify_tripod",
+            "freecam.setting.notify_tripod",
+            true,
+        ));
+        registrar.register_key_mapping(
+            KeyRegistration::new(TOGGLE, DEFAULT_TOGGLE_KEY)
+                .label("freecam.key.toggle")
+                .category("freecam.category")
+                .context(KeyConflictContext::InGame),
+        );
+        registrar.register_key_mapping(
+            KeyRegistration::new(TRIPOD_RESET, DEFAULT_RESET_KEY)
+                .label("freecam.key.reset")
+                .category("freecam.category")
+                .context(KeyConflictContext::InGame),
+        );
+    }
+
+    fn client_tick_pre(&self, _: &mut dyn mod_api::ClientHost, _: &mut mod_api::ClientTickPreEvent) {
     }
 }

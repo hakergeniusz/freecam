@@ -2,9 +2,15 @@
 // detached and the interaction asks for it, the game's own otherwise. The
 // pick helper carries the same ray's reach past the player's own, so the
 // whole interaction pipeline acts on what this ray hits.
-fn freecam_aim(game: &crate::game::Game<'_>) -> core::ops::ControlFlow<Option<([f64; 3], [f64; 3])>> {
-    use crate::game::freecam as freecam;
-    if !game.native_on(freecam::ID) {
+// Copyright (c) 2026 hakergeniusz. MIT.
+fn freecam_aim(
+    game: &crate::game::Game<'_>,
+) -> core::ops::ControlFlow<Option<([f64; 3], [f64; 3])>> {
+    fn on(game: &crate::game::Game<'_>) -> bool {
+        game.stored_setting(freecam::ID, "enabled")
+            .is_none_or(|value| value.trim() != "false")
+    }
+    if !on(game) {
         return core::ops::ControlFlow::Continue(());
     }
     match freecam::aim() {

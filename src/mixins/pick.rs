@@ -7,15 +7,21 @@
 // reach; the attempt is the point. The tick's own cached target (set once
 // a tick before the clicks run, so a creative break does not move the use
 // that follows it) and every other pick stay the game's own.
+// Copyright (c) 2026 hakergeniusz. MIT.
 fn freecam_pick(game: &crate::game::Game<'_>) -> core::ops::ControlFlow<Option<Hit>> {
-    use crate::game::freecam as freecam;
-    if !game.native_on(freecam::ID) || game.tick_hit.is_some() {
+    fn on(game: &crate::game::Game<'_>) -> bool {
+        game.stored_setting(freecam::ID, "enabled")
+            .is_none_or(|value| value.trim() != "false")
+    }
+    if !on(game) || game.tick_hit.get().is_some() {
         return core::ops::ControlFlow::Continue(());
     }
     match freecam::aim() {
-        Some((origin, dir)) => {
-            core::ops::ControlFlow::Break(game.clip_ray(origin, dir, freecam::CAMERA_REACH))
-        }
+        Some((origin, dir)) => core::ops::ControlFlow::Break(game.clip_ray(
+            origin,
+            dir,
+            freecam::CAMERA_REACH,
+        )),
         None => core::ops::ControlFlow::Continue(()),
     }
 }
